@@ -1,87 +1,204 @@
-import { useState } from 'react';
-import InputBox from '../components/InputBox';
-import ChatArea from '../components/ChatArea';
+import { useState, useEffect } from "react";
+import InputBox from "../components/InputBox";
+import ChatArea from "../components/ChatArea";
+import Sidebar from "../components/Sidebar";
 
-export default function MainChatPage() {
+export default function MainChatPage({ selectedChatId, onSelectChat }) {
   const [messages, setMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
-  const hasStarted = messages.length > 0;
+  const [chatSessions, setChatSessions] = useState([]);
+  const [currentChatId, setCurrentChatId] = useState(selectedChatId);
+
+  // Fetch and sort chat sessions
+  const fetchSessions = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const email = localStorage.getItem("email");
+      if (!email) throw new Error("No email found");
+      if (!token) throw new Error("No token found");
+
+      const res = await fetch(
+        `${import.meta.env.VITE_BACKEND_URL}/chatSession`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ email }),
+        }
+      );
+
+      const json = await res.json();
+      console.log("Response JSON:", json);
+
+      if (json.success) {
+        const sorted = [...(json.sessions || [])].sort(
+          (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+        );
+        setChatSessions(sorted);
+      } else {
+        console.error("Backend returned an error:", json);
+      }
+    } catch (err) {
+      console.error("Failed to fetch sessions", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchSessions();
+  }, []);
+
+  // Whenever currentChatId changes, fetch messages
+  useEffect(() => {
+    if (!currentChatId) {
+      setMessages([]);
+      return;
+    }
+
+    const fetchMessages = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(
+          `${import.meta.env.VITE_BACKEND_URL}/chat/${currentChatId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        const json = await res.json();
+        if (json.success) {
+          // Map messages to expected format {text, image, isUser}
+          setMessages(
+            json.messages.map((m) => ({
+              text: m.output || m.text || "", // fallback if field is different
+              image: m.image || null, // adjust if your backend sends images
+              isUser: m.isUser || false, // if backend doesn't send this, default false
+            }))
+          );
+        }
+      } catch (err) {
+        console.error("Failed to fetch chat messages", err);
+      }
+    };
+
+    fetchMessages();
+  }, [currentChatId]);
 
   const handleSend = async ({ text, image }) => {
     if (!text.trim() && !image) return;
 
-    // Add user message immediately (mark isUser: true)
+    // Add user's message immediately
     setMessages((prev) => [...prev, { text, image, isUser: true }]);
-
     setIsTyping(true);
 
-    const formData = new FormData();
-    if (text) formData.append('text', text);
-
-    if (image) {
-      const response = await fetch(image);
-      const blob = await response.blob();
-      formData.append('image', blob, 'image.jpg');
-    }
-
-    for (const [key, value] of formData.entries()) {
-  console.log(key, value);
-}
-
-    // Send data to backend
     try {
-      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/chat`, {
-        method: 'POST',
+      const formData = new FormData();
+      if (text) formData.append("text", text);
+      if (image) {
+        // If image is a URL, fetch blob
+        if (typeof image === "string") {
+          const response = await fetch(image);
+          const blob = await response.blob();
+          formData.append("image", blob, "image.jpg");
+        } else {
+          // If image is already a File or Blob, append directly
+          formData.append("image", image, "image.jpg");
+        }
+      }
+
+      // Use new_chat if no currentChatId, else normal chat update
+      const url = currentChatId
+        ? `${import.meta.env.VITE_BACKEND_URL}/chat`
+        : `${import.meta.env.VITE_BACKEND_URL}/new_chat`;
+
+      if (currentChatId) {
+        formData.append("chat_id", currentChatId);
+      }
+
+      const res = await fetch(url, {
+        method: "POST",
         body: formData,
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
       });
 
       const data = await res.json();
 
-      console.log('Response from server:', data);
-      const bots = data.message[data.message.length - 1];
-      const botResponse = bots[bots.length - 1];
-
-      console.log('Bot response:', botResponse);
-      if (!botResponse) {
+      if (data.success) {
         setMessages((prev) => [
           ...prev,
-          { text: '[Error: No response from server]', isUser: false },
+          { text: data.response, isUser: false, image: null },
         ]);
-        return;
+
+        // If new chat created, update currentChatId & sidebar
+        if (!currentChatId && data.chat_id) {
+          setCurrentChatId(data.chat_id);
+          onSelectChat?.(data.chat_id);
+          await fetchSessions();
+        }
+      } else {
+        console.error("Backend error:", data);
       }
-
-
-      // Add bot message (mark isUser: false)
-      setMessages((prev) => [...prev, { text: botResponse, isUser: false }]);
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { text: '[Error contacting server. Please try again.]', isUser: false },
-      ]);
+      console.error("Failed to send message", err);
     } finally {
       setIsTyping(false);
     }
   };
 
-  return (
-    <div className="h-screen bg-gradient-to-br p-4 from-gray-900 via-indigo-900 to-purple-900 text-white flex flex-col">
-      {!hasStarted ? (
-        <div className="flex flex-1 justify-center items-center px-4">
-          <div className="w-full max-w-md shadow-lg rounded-lg bg-gray-900/90 backdrop-blur-sm">
-            <InputBox onSend={handleSend} isCentered />
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl mx-auto w-full bg-gray-900 bg-opacity-60 rounded-t-lg shadow-inner shadow-indigo-900/80 flex flex-col">
-            <ChatArea messages={messages} isTyping={isTyping} />
-          </div>
+  const handleSelectChat = async (chatId) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/chat/${chatId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const json = await res.json();
+      if (json.success) {
+        // Map backend messages format to UI format
+        const mappedMessages = (json.messages || []).map((m) => ({
+          text: m.output || m.text || "",
+          image: m.image || null,
+          isUser: m.isUser || false,
+        }));
 
-          <div className="border-indigo-700 w-full max-w-2xl mx-auto px-4 py-3 bg-gray-900 flex items-center gap-3 rounded-b-lg shadow-md">
-            <InputBox onSend={handleSend} />
-          </div>
-        </>
-      )}
+        setMessages(mappedMessages);
+        setCurrentChatId(chatId);
+        onSelectChat?.(chatId);
+      } else {
+        console.error("Failed to load chat messages:", json);
+      }
+    } catch (err) {
+      console.error("Failed to load chat messages:", err);
+    }
+  };
+
+  const handleNewChat = () => {
+    setCurrentChatId(null);
+    setMessages([]);
+    onSelectChat?.(null);
+  };
+
+  return (
+    <div className="flex h-screen">
+      <Sidebar
+        sessions={chatSessions}
+        onSelect={handleSelectChat}
+        onNewChat={handleNewChat}
+        selectedChatId={currentChatId}
+      />
+      <div className="flex flex-col flex-1 bg-gradient-to-br from-gray-900 via-indigo-900 to-purple-900 text-white">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 w-full bg-gray-900 bg-opacity-60">
+          <ChatArea messages={messages} isTyping={isTyping} />
+        </div>
+        <div className="border-indigo-700 w-full mx-auto px-4 py-3 bg-gray-900 flex items-center gap-3">
+          <InputBox onSend={handleSend} />
+        </div>
+      </div>
     </div>
   );
 }
