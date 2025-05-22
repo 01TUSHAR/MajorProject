@@ -10,6 +10,7 @@ export default function Sidebar({ sessions, onSelect, onNewChat, selectedChatId 
       <ul className="space-y-2">
         {sessions.map((session, idx) => {
           const id = session._id || session.chat_id;
+          console.log("Session ID:", id);
           const isSelected = id === selectedChatId;
           return (
             <li

@@ -4,22 +4,23 @@ export default function ChatArea({ messages, isTyping }) {
   const bottomRef = useRef(null);
 
   useEffect(() => {
-    if (bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages.length, isTyping]);
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isTyping]);
 
   return (
-    <div className="px-12 py-4 space-y-4 h-full w-full flex flex-col overflow-y-auto mx-auto">
+    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 w-full">
       {messages.map((msg, idx) => (
         <div
           key={idx}
-          className={`max-w-sm w-fit p-2 rounded-lg shadow-md break-words
-            ${msg.isUser
-              ? 'bg-indigo-600 text-white justify-end ml-auto'
-              : 'bg-gray-800 bg-opacity-90 text-white justify-start mr-auto'}`}
+          className={`max-w-sm w-fit p-3 rounded-lg shadow-md break-words ${
+            msg.isUser
+              ? 'bg-indigo-600 text-white ml-auto'
+              : 'bg-gray-800 text-white mr-auto'
+          }`}
         >
-          {msg.text && <p className="whitespace-pre-wrap">{msg.text}</p>}
+          {msg.text && (
+            <p className="whitespace-pre-wrap">{msg.text}</p>
+          )}
           {msg.image && (
             <img
               src={msg.image}
@@ -31,7 +32,7 @@ export default function ChatArea({ messages, isTyping }) {
       ))}
 
       {isTyping && (
-        <div className="max-w-sm w-fit p-2 rounded-lg shadow-md bg-gray-800 bg-opacity-90 text-white self-start mr-auto">
+        <div className="max-w-sm w-fit p-3 rounded-lg shadow-md bg-gray-800 text-white mr-auto">
           <TypingDots />
         </div>
       )}
@@ -44,13 +45,9 @@ export default function ChatArea({ messages, isTyping }) {
 function TypingDots() {
   return (
     <div className="flex space-x-1 items-center">
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="w-2.5 h-2.5 bg-indigo-400 rounded-full animate-bounce"
-          style={{ animationDelay: `${i * 0.2}s` }}
-        />
-      ))}
+      <span className="w-2.5 h-2.5 bg-indigo-400 rounded-full animate-bounce delay-0" />
+      <span className="w-2.5 h-2.5 bg-indigo-400 rounded-full animate-bounce delay-200" />
+      <span className="w-2.5 h-2.5 bg-indigo-400 rounded-full animate-bounce delay-400" />
     </div>
   );
 }

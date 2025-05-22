@@ -49,7 +49,6 @@ export default function MainChatPage({ selectedChatId, onSelectChat }) {
     fetchSessions();
   }, []);
 
-  // Whenever currentChatId changes, fetch messages
   useEffect(() => {
     if (!currentChatId) {
       setMessages([]);
@@ -60,23 +59,27 @@ export default function MainChatPage({ selectedChatId, onSelectChat }) {
       try {
         const token = localStorage.getItem("token");
         const res = await fetch(
-          `${import.meta.env.VITE_BACKEND_URL}/chat/${currentChatId}`,
+          `${import.meta.env.VITE_BACKEND_URL}/chatMessages`,
           {
+            method: "POST",
             headers: {
+              "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
+            body: JSON.stringify({ chat_id: currentChatId }),
           }
         );
         const json = await res.json();
-        if (json.success) {
-          // Map messages to expected format {text, image, isUser}
+        console.log("Fetched messages:", json);
+        if (json.success && Array.isArray(json.messages)) {
           setMessages(
-            json.messages.map((m) => ({
-              text: m.output || m.text || "", // fallback if field is different
-              image: m.image || null, // adjust if your backend sends images
-              isUser: m.isUser || false, // if backend doesn't send this, default false
-            }))
+            json.messages.flatMap((m) => [
+              { text: m.input || "", image: null, isUser: true },
+              { text: m.output || "", image: null, isUser: false },
+            ])
           );
+        } else {
+          setMessages([]);
         }
       } catch (err) {
         console.error("Failed to fetch chat messages", err);
@@ -89,12 +92,16 @@ export default function MainChatPage({ selectedChatId, onSelectChat }) {
   const handleSend = async ({ text, image }) => {
     if (!text.trim() && !image) return;
 
+
+
     // Add user's message immediately
-    setMessages((prev) => [...prev, { text, image, isUser: true }]);
+    const imageUrl = image ? URL.createObjectURL(image) : null;
+    setMessages((prev) => [...prev, { text, image : imageUrl, isUser: true }]);
     setIsTyping(true);
 
     try {
       const formData = new FormData();
+
       if (text) formData.append("text", text);
       if (image) {
         // If image is a URL, fetch blob
@@ -107,7 +114,8 @@ export default function MainChatPage({ selectedChatId, onSelectChat }) {
           formData.append("image", image, "image.jpg");
         }
       }
-
+      const email = localStorage.getItem("email");
+      formData.append("email", email);
       // Use new_chat if no currentChatId, else normal chat update
       const url = currentChatId
         ? `${import.meta.env.VITE_BACKEND_URL}/chat`
@@ -126,6 +134,7 @@ export default function MainChatPage({ selectedChatId, onSelectChat }) {
       });
 
       const data = await res.json();
+      console.log("Response from backend:", data);
 
       if (data.success) {
         setMessages((prev) => [
@@ -152,12 +161,19 @@ export default function MainChatPage({ selectedChatId, onSelectChat }) {
   const handleSelectChat = async (chatId) => {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/chat/${chatId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const res = await fetch(
+        `${import.meta.env.VITE_BACKEND_URL}/chatMessages`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ chat_id: chatId }),
+          method: "POST",
+        }
+      );
       const json = await res.json();
+      console.log("Fetched chat messages:", json);
       if (json.success) {
         // Map backend messages format to UI format
         const mappedMessages = (json.messages || []).map((m) => ({
